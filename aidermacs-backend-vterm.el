@@ -89,10 +89,6 @@ If the finish sequence is detected, store the output via
 `aidermacs--store-output`, restore ORIG-FILTER, and return t."
   (when (buffer-live-p (process-buffer proc))
     (with-current-buffer (process-buffer proc)
-      ;; Save cursor position if not already saved and preservation is enabled
-      (when (and aidermacs-preserve-cursor-position (not aidermacs--vterm-saved-point))
-        (setq aidermacs--vterm-saved-point (point)))
-      
       ;; Render vterm if the function is available
       (when (fboundp 'vterm--render)
         (condition-case nil
@@ -135,10 +131,9 @@ If the finish sequence is detected, store the output via
                 (set-process-filter proc orig-filter)
                 (aidermacs--maybe-cancel-active-timer (process-buffer proc))
                 
-                ;; Restore cursor position if we saved one and preservation is enabled
+                ;; Restore cursor position if preservation is enabled
                 (when (and aidermacs-preserve-cursor-position aidermacs--vterm-saved-point)
-                  (goto-char aidermacs--vterm-saved-point)
-                  (setq aidermacs--vterm-saved-point nil))))))))))
+                  (goto-char aidermacs--vterm-saved-point))))))))))
 
 (defun aidermacs--vterm-capture-output ()
   "Capture vterm output until the finish sequence appears.
@@ -156,7 +151,10 @@ after each output chunk, reducing the need for timers."
       (with-current-buffer (process-buffer proc)
         ;; Save cursor position if preservation is enabled
         (when aidermacs-preserve-cursor-position
-          (setq aidermacs--vterm-saved-point (point)))
+          (setq aidermacs--vterm-saved-point (point))
+          ;; Add a post-command-hook to maintain cursor position
+          (add-hook 'post-command-hook #'aidermacs--vterm-maintain-cursor-position nil t))
+        
         ;; Initialize tracking variables
         (setq aidermacs--vterm-last-check-point nil)
         ;; Cancel any existing timer first
@@ -334,9 +332,17 @@ BUFFER is the target buffer to send to.  COMMAND is the text to send."
           (when (aidermacs--command-may-edit-files command)
             (aidermacs--prepare-for-code-edit)))))))
 
+(defun aidermacs--vterm-maintain-cursor-position ()
+  "Maintain cursor position during output processing."
+  (when (and aidermacs-preserve-cursor-position 
+             aidermacs--vterm-saved-point
+             (not (eq (point) aidermacs--vterm-saved-point)))
+    (goto-char aidermacs--vterm-saved-point)))
+
 (defun aidermacs--vterm-cleanup ()
   "Clean up vterm resources when buffer is killed."
   (aidermacs--maybe-cancel-active-timer)
+  (remove-hook 'post-command-hook #'aidermacs--vterm-maintain-cursor-position t)
   (setq-local aidermacs--vterm-last-check-point nil
               aidermacs--vterm-saved-point nil))
 
@@ -346,6 +352,10 @@ _ARGS are the arguments."
   (when (aidermacs--is-aidermacs-buffer-p)
     ;; Cancel any active timer
     (aidermacs--maybe-cancel-active-timer)
+    ;; Remove the post-command-hook
+    (remove-hook 'post-command-hook #'aidermacs--vterm-maintain-cursor-position t)
+    ;; Reset saved point
+    (setq aidermacs--vterm-saved-point nil)
     (aidermacs--cleanup-temp-buffers)))
 
 (defvar aidermacs-vterm-mode-map

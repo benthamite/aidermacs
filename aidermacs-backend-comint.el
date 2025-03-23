@@ -123,25 +123,34 @@ that was matched at the start of the current syntax block.")
 
 (defvar aidermacs-prompt-regexp)
 
+(defvar-local aidermacs--comint-saved-point nil
+  "Store the cursor position when output processing begins.")
+
 (defun aidermacs--comint-output-filter (output)
   "Accumulate OUTPUT string until a prompt is detected, then store it."
   (when (and (aidermacs--is-aidermacs-buffer-p) (not (string-empty-p output)))
-    ;; Save cursor position if needed
-    (let ((saved-point (when aidermacs-preserve-cursor-position (point))))
-      (setq aidermacs--comint-output-temp
-            (concat aidermacs--comint-output-temp (substring-no-properties output)))
-      ;; Check if the output contains a prompt
-      (when (string-match-p aidermacs-prompt-regexp aidermacs--comint-output-temp)
-        (aidermacs--store-output aidermacs--comint-output-temp)
-        ;; Check if any files were edited and show ediff if needed
-        (let ((edited-files (aidermacs--detect-edited-files)))
-          (if edited-files
-              (aidermacs--show-ediff-for-edited-files edited-files)
-            (aidermacs--cleanup-temp-buffers)))
-        (setq aidermacs--comint-output-temp ""))
+    ;; Save cursor position if needed and not already saved
+    (when (and aidermacs-preserve-cursor-position (not aidermacs--comint-saved-point))
+      (setq aidermacs--comint-saved-point (point)))
+    
+    ;; Process the output
+    (setq aidermacs--comint-output-temp
+          (concat aidermacs--comint-output-temp (substring-no-properties output)))
+    
+    ;; Check if the output contains a prompt
+    (when (string-match-p aidermacs-prompt-regexp aidermacs--comint-output-temp)
+      (aidermacs--store-output aidermacs--comint-output-temp)
+      ;; Check if any files were edited and show ediff if needed
+      (let ((edited-files (aidermacs--detect-edited-files)))
+        (if edited-files
+            (aidermacs--show-ediff-for-edited-files edited-files)
+          (aidermacs--cleanup-temp-buffers)))
+      (setq aidermacs--comint-output-temp "")
+      
       ;; Restore cursor position if needed
-      (when saved-point
-        (goto-char saved-point)))))
+      (when (and aidermacs-preserve-cursor-position aidermacs--comint-saved-point)
+        (goto-char aidermacs--comint-saved-point)
+        (setq aidermacs--comint-saved-point nil)))))
 
 (defun aidermacs-reset-font-lock-state ()
   "Reset font lock state to default for processing a new source block."
@@ -290,7 +299,8 @@ _OUTPUT is the text to be processed."
 (defun aidermacs--comint-cleanup-hook ()
   "Clean up the fontify buffer."
   (when (bufferp aidermacs--syntax-work-buffer)
-    (kill-buffer aidermacs--syntax-work-buffer)))
+    (kill-buffer aidermacs--syntax-work-buffer))
+  (setq-local aidermacs--comint-saved-point nil))
 
 (defun aidermacs-input-sender (proc string)
   "Reset font-lock state before executing a command.
@@ -298,6 +308,10 @@ PROC is the process to send to.  STRING is the command to send."
   (aidermacs-reset-font-lock-state)
   ;; Store the command for tracking in the correct buffer
   (with-current-buffer (process-buffer proc)
+    ;; Save cursor position if preservation is enabled
+    (when aidermacs-preserve-cursor-position
+      (setq aidermacs--comint-saved-point (point)))
+    
     (if (member (downcase string) '("" "y" "n" "d" "yes" "no"))
         (aidermacs--parse-output-for-files aidermacs--comint-output-temp)
       (setq aidermacs--last-command string)
