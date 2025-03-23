@@ -57,6 +57,13 @@
   "VTerm backend for Aidermacs."
   :group 'aidermacs)
 
+(defcustom aidermacs-preserve-cursor-position nil
+  "When non-nil, preserve cursor position during model output.
+By default, the cursor follows the model's output as it is generated.
+When set to t, the cursor will remain at its position when the prompt was sent."
+  :type 'boolean
+  :group 'aidermacs)
+
 (defvar-local aidermacs--vterm-active-timer nil
   "Store the active timer for vterm output processing.")
 
@@ -71,7 +78,8 @@
   :type 'string)
 
 (defvar-local aidermacs--vterm-saved-point nil
-  "Store the cursor position when output processing begins.")
+  "Store the cursor position when output processing begins.
+Only used when `aidermacs-preserve-cursor-position' is non-nil.")
 
 (defun aidermacs--vterm-check-finish-sequence-repeated (proc orig-filter start-point)
   "Check for the finish sequence in PROC's buffer.
@@ -81,8 +89,8 @@ If the finish sequence is detected, store the output via
 `aidermacs--store-output`, restore ORIG-FILTER, and return t."
   (when (buffer-live-p (process-buffer proc))
     (with-current-buffer (process-buffer proc)
-      ;; Save cursor position if not already saved
-      (unless aidermacs--vterm-saved-point
+      ;; Save cursor position if not already saved and preservation is enabled
+      (when (and aidermacs-preserve-cursor-position (not aidermacs--vterm-saved-point))
         (setq aidermacs--vterm-saved-point (point)))
       
       ;; Render vterm if the function is available
@@ -127,8 +135,8 @@ If the finish sequence is detected, store the output via
                 (set-process-filter proc orig-filter)
                 (aidermacs--maybe-cancel-active-timer (process-buffer proc))
                 
-                ;; Restore cursor position if we saved one
-                (when aidermacs--vterm-saved-point
+                ;; Restore cursor position if we saved one and preservation is enabled
+                (when (and aidermacs-preserve-cursor-position aidermacs--vterm-saved-point)
                   (goto-char aidermacs--vterm-saved-point)
                   (setq aidermacs--vterm-saved-point nil))))))))))
 
@@ -146,8 +154,9 @@ after each output chunk, reducing the need for timers."
            (orig-filter (process-filter proc)))
       ;; Store the command for tracking in the correct buffer
       (with-current-buffer (process-buffer proc)
-        ;; Save cursor position
-        (setq aidermacs--vterm-saved-point (point))
+        ;; Save cursor position if preservation is enabled
+        (when aidermacs-preserve-cursor-position
+          (setq aidermacs--vterm-saved-point (point)))
         ;; Initialize tracking variables
         (setq aidermacs--vterm-last-check-point nil)
         ;; Cancel any existing timer first

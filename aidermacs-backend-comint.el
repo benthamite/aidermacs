@@ -44,6 +44,13 @@
   "Comint backend for Aidermacs."
   :group 'aidermacs)
 
+(defcustom aidermacs-preserve-cursor-position nil
+  "When non-nil, preserve cursor position during model output.
+By default, the cursor follows the model's output as it is generated.
+When set to t, the cursor will remain at its position when the prompt was sent."
+  :type 'boolean
+  :group 'aidermacs)
+
 (defcustom aidermacs-language-name-map '(("elisp" . "emacs-lisp")
                                          ("bash" . "sh")
                                          ("objective-c" . "objc")
@@ -119,8 +126,8 @@ that was matched at the start of the current syntax block.")
 (defun aidermacs--comint-output-filter (output)
   "Accumulate OUTPUT string until a prompt is detected, then store it."
   (when (and (aidermacs--is-aidermacs-buffer-p) (not (string-empty-p output)))
-    ;; Save cursor position
-    (let ((saved-point (point)))
+    ;; Save cursor position if needed
+    (let ((saved-point (when aidermacs-preserve-cursor-position (point))))
       (setq aidermacs--comint-output-temp
             (concat aidermacs--comint-output-temp (substring-no-properties output)))
       ;; Check if the output contains a prompt
@@ -132,8 +139,9 @@ that was matched at the start of the current syntax block.")
               (aidermacs--show-ediff-for-edited-files edited-files)
             (aidermacs--cleanup-temp-buffers)))
         (setq aidermacs--comint-output-temp ""))
-      ;; Restore cursor position
-      (goto-char saved-point))))
+      ;; Restore cursor position if needed
+      (when saved-point
+        (goto-char saved-point)))))
 
 (defun aidermacs-reset-font-lock-state ()
   "Reset font lock state to default for processing a new source block."
