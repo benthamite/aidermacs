@@ -70,6 +70,9 @@
   "Key binding to enter a newline without sending in vterm."
   :type 'string)
 
+(defvar-local aidermacs--vterm-saved-point nil
+  "Store the cursor position when output processing begins.")
+
 (defun aidermacs--vterm-check-finish-sequence-repeated (proc orig-filter start-point)
   "Check for the finish sequence in PROC's buffer.
 PROC is the process to check.  ORIG-FILTER is the original process filter.
@@ -78,6 +81,10 @@ If the finish sequence is detected, store the output via
 `aidermacs--store-output`, restore ORIG-FILTER, and return t."
   (when (buffer-live-p (process-buffer proc))
     (with-current-buffer (process-buffer proc)
+      ;; Save cursor position if not already saved
+      (unless aidermacs--vterm-saved-point
+        (setq aidermacs--vterm-saved-point (point)))
+      
       ;; Render vterm if the function is available
       (when (fboundp 'vterm--render)
         (condition-case nil
@@ -118,7 +125,12 @@ If the finish sequence is detected, store the output via
                 ;; Restore the original process filter now that we've finished processing
                 ;; this command's output. This returns vterm to its normal behavior.
                 (set-process-filter proc orig-filter)
-                (aidermacs--maybe-cancel-active-timer (process-buffer proc))))))))))
+                (aidermacs--maybe-cancel-active-timer (process-buffer proc))
+                
+                ;; Restore cursor position if we saved one
+                (when aidermacs--vterm-saved-point
+                  (goto-char aidermacs--vterm-saved-point)
+                  (setq aidermacs--vterm-saved-point nil))))))))))
 
 (defun aidermacs--vterm-capture-output ()
   "Capture vterm output until the finish sequence appears.
@@ -134,6 +146,8 @@ after each output chunk, reducing the need for timers."
            (orig-filter (process-filter proc)))
       ;; Store the command for tracking in the correct buffer
       (with-current-buffer (process-buffer proc)
+        ;; Save cursor position
+        (setq aidermacs--vterm-saved-point (point))
         ;; Initialize tracking variables
         (setq aidermacs--vterm-last-check-point nil)
         ;; Cancel any existing timer first
@@ -314,7 +328,8 @@ BUFFER is the target buffer to send to.  COMMAND is the text to send."
 (defun aidermacs--vterm-cleanup ()
   "Clean up vterm resources when buffer is killed."
   (aidermacs--maybe-cancel-active-timer)
-  (setq-local aidermacs--vterm-last-check-point nil))
+  (setq-local aidermacs--vterm-last-check-point nil
+              aidermacs--vterm-saved-point nil))
 
 (defun aidermacs--cleanup-temp-files-on-interrupt-vterm ()
   "Run `aidermacs--cleanup-temp-buffers' after interrupting a vterm subjob.

@@ -119,17 +119,21 @@ that was matched at the start of the current syntax block.")
 (defun aidermacs--comint-output-filter (output)
   "Accumulate OUTPUT string until a prompt is detected, then store it."
   (when (and (aidermacs--is-aidermacs-buffer-p) (not (string-empty-p output)))
-    (setq aidermacs--comint-output-temp
-          (concat aidermacs--comint-output-temp (substring-no-properties output)))
-    ;; Check if the output contains a prompt
-    (when (string-match-p aidermacs-prompt-regexp aidermacs--comint-output-temp)
-      (aidermacs--store-output aidermacs--comint-output-temp)
-      ;; Check if any files were edited and show ediff if needed
-      (let ((edited-files (aidermacs--detect-edited-files)))
-        (if edited-files
-            (aidermacs--show-ediff-for-edited-files edited-files)
-          (aidermacs--cleanup-temp-buffers)))
-      (setq aidermacs--comint-output-temp ""))))
+    ;; Save cursor position
+    (let ((saved-point (point)))
+      (setq aidermacs--comint-output-temp
+            (concat aidermacs--comint-output-temp (substring-no-properties output)))
+      ;; Check if the output contains a prompt
+      (when (string-match-p aidermacs-prompt-regexp aidermacs--comint-output-temp)
+        (aidermacs--store-output aidermacs--comint-output-temp)
+        ;; Check if any files were edited and show ediff if needed
+        (let ((edited-files (aidermacs--detect-edited-files)))
+          (if edited-files
+              (aidermacs--show-ediff-for-edited-files edited-files)
+            (aidermacs--cleanup-temp-buffers)))
+        (setq aidermacs--comint-output-temp ""))
+      ;; Restore cursor position
+      (goto-char saved-point))))
 
 (defun aidermacs-reset-font-lock-state ()
   "Reset font lock state to default for processing a new source block."
